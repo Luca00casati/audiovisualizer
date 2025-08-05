@@ -73,8 +73,15 @@ int main(int argc, char *argv[]) {
         float mags[MAX_BARS] = {0};
 
         for (int i = 0; i < barCount; i++) {
-            int startBin = i * (FFT_SIZE / 2) / barCount;
-            int endBin = (i + 1) * (FFT_SIZE / 2) / barCount;
+            float logMin = 0.0f;
+            float logMax = log10f((float)(FFT_SIZE / 2));
+
+            int startBin = (int)powf(10, lerp(logMin, logMax, (float)i / barCount));
+            int endBin = (int)powf(10, lerp(logMin, logMax, (float)(i + 1) / barCount));
+            if (startBin < 0) startBin = 0;
+            if (endBin > FFT_SIZE / 2) endBin = FFT_SIZE / 2;
+            if (endBin <= startBin) endBin = startBin + 1;
+
             float magSum = 0;
             int count = 0;
             for (int b = startBin; b < endBin; b++) {
@@ -112,7 +119,7 @@ int main(int argc, char *argv[]) {
         }
 
         EndBlendMode();
-        DrawText(audiostr, 20, 20, 40, WHITE); 
+        DrawText(audiostr, 20, 20, 40, WHITE);
         EndDrawing();
     }
 
