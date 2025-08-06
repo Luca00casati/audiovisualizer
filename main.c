@@ -1,11 +1,12 @@
-#include "raylib.h"
+#include <raylib.h>
 #include <fftw3.h>
 #include <math.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
 
-#define FFT_SIZE 1024
-#define MAX_BARS 128
+#define FFT_SIZE 2048
+#define MAX_BARS 256
 
 float lerp(float a, float b, float t) {
     return a + (b - a) * t;
@@ -20,8 +21,14 @@ Color GradientColor(float t) {
 int main(int argc, char *argv[]) {
     if (argc < 2) return 1;
     const char *audioPath = argv[1];
+    const char *filename = strrchr(audioPath, '/'); 
+    if (filename)
+        filename++; 
+    else
+        filename = audioPath; 
+
     char audiostr[1024];
-    sprintf(audiostr, "playing: %s", audioPath);
+    snprintf(audiostr, sizeof(audiostr), "playing: %s", filename);
 
     InitWindow(1024, 600, "Visualizer");
     InitAudioDevice();
@@ -32,7 +39,7 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    Sound sound = LoadSound(audioPath);
+    Music music = LoadMusicStream(audioPath);
     Wave wave = LoadWave(audioPath);
     float *samples = LoadWaveSamples(wave);
     int totalSamples = wave.frameCount;
@@ -41,25 +48,30 @@ int main(int argc, char *argv[]) {
     double *in = fftw_malloc(sizeof(double) * FFT_SIZE);
     fftw_plan plan = fftw_plan_dft_r2c_1d(FFT_SIZE, in, out, FFTW_ESTIMATE);
 
-    float smoothed[MAX_BARS] = {0};
-    float smoothedInterp[MAX_BARS] = {0};
+    float *smoothed = calloc(MAX_BARS, sizeof(float));
+    float *smoothedInterp = calloc(MAX_BARS, sizeof(float));
+    float *peaks = calloc(MAX_BARS, sizeof(float));
 
-    PlaySound(sound);
-    int sampleCursor = 0;
-
+    PlayMusicStream(music);
     SetTargetFPS(60);
 
+    static float avgMaxMag = 1.0f;
+
     while (!WindowShouldClose()) {
-        for (int i = 0; i < FFT_SIZE; i++)
-            in[i] = (sampleCursor + i < totalSamples) ? samples[sampleCursor + i] : 0.0;
+        UpdateMusicStream(music);
+        unsigned int sampleCursor = GetMusicTimePlayed(music) * wave.sampleRate;
+
+        for (int i = 0; i < FFT_SIZE; i++) {
+            if ((int)(sampleCursor + i) < totalSamples) {
+                float left = samples[(sampleCursor + i) * wave.channels];
+                float right = wave.channels > 1 ? samples[(sampleCursor + i) * wave.channels + 1] : left;
+                in[i] = 0.5f * (left + right);
+            } else {
+                in[i] = 0.0;
+            }
+        }
 
         fftw_execute(plan);
-        sampleCursor += FFT_SIZE;
-        if (sampleCursor + FFT_SIZE >= totalSamples) {
-            sampleCursor = 0;
-            StopSound(sound);
-            PlaySound(sound);
-        }
 
         int screenW = GetScreenWidth();
         int screenH = GetScreenHeight();
@@ -73,9 +85,8 @@ int main(int argc, char *argv[]) {
         float mags[MAX_BARS] = {0};
 
         for (int i = 0; i < barCount; i++) {
-            float logMin = 0.0f;
+            float logMin = log10f(2.0f);
             float logMax = log10f((float)(FFT_SIZE / 2));
-
             int startBin = (int)powf(10, lerp(logMin, logMax, (float)i / barCount));
             int endBin = (int)powf(10, lerp(logMin, logMax, (float)(i + 1) / barCount));
             if (startBin < 0) startBin = 0;
@@ -87,7 +98,8 @@ int main(int argc, char *argv[]) {
             for (int b = startBin; b < endBin; b++) {
                 float re = out[b][0];
                 float im = out[b][1];
-                magSum += sqrtf(re * re + im * im);
+                float mag = sqrtf(re * re + im * im);
+                magSum += sqrtf(mag);
                 count++;
             }
             float mag = (count > 0) ? magSum / count : 0;
@@ -95,8 +107,10 @@ int main(int argc, char *argv[]) {
             if (mag > maxMag) maxMag = mag;
         }
 
+        avgMaxMag = lerp(avgMaxMag, maxMag, 0.1f);
+
         for (int i = 0; i < barCount; i++) {
-            float scaled = mags[i] / maxMag * screenH;
+            float scaled = mags[i] / avgMaxMag * screenH;
             smoothed[i] = lerp(smoothed[i], scaled, 0.2f);
         }
 
@@ -104,6 +118,13 @@ int main(int argc, char *argv[]) {
             float left = (i == 0) ? smoothed[i] : smoothed[i - 1];
             float right = (i == barCount - 1) ? smoothed[i] : smoothed[i + 1];
             smoothedInterp[i] = (left + smoothed[i] + right) / 3.0f;
+        }
+
+        for (int i = 0; i < barCount; i++) {
+            if (smoothedInterp[i] > peaks[i])
+                peaks[i] = smoothedInterp[i];
+            else
+                peaks[i] = lerp(peaks[i], smoothedInterp[i], 0.05f);
         }
 
         BeginDrawing();
@@ -118,6 +139,12 @@ int main(int argc, char *argv[]) {
             DrawRectangle((int)x, y, (int)barWidth, barHeight, c);
         }
 
+        for (int i = 0; i < barCount; i++) {
+            float x = i * (barWidth + spacing);
+            int y = screenH - peaks[i];
+            DrawRectangle((int)x, y, (int)barWidth, 4, WHITE);
+        }
+
         EndBlendMode();
         DrawText(audiostr, 20, 20, 40, WHITE);
         EndDrawing();
@@ -126,9 +153,12 @@ int main(int argc, char *argv[]) {
     fftw_destroy_plan(plan);
     fftw_free(in);
     fftw_free(out);
-    UnloadSound(sound);
-    UnloadWave(wave);
+    free(smoothed);
+    free(smoothedInterp);
+    free(peaks);
     UnloadWaveSamples(samples);
+    UnloadWave(wave);
+    UnloadMusicStream(music);
     CloseAudioDevice();
     CloseWindow();
 
