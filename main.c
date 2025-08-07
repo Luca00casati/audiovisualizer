@@ -127,6 +127,7 @@ char **GetAudioFilesInDir(const char *dirPath, int *count) {
 
 void VisualizeAudio(const char *audioPath, bool loop, const char *displayName, HSV baseHSV) {
     if (!FileExists(audioPath)) return;
+    bool isPaused = false;
 
     Music music = LoadMusicStream(audioPath);
     music.looping = loop;
@@ -148,6 +149,12 @@ void VisualizeAudio(const char *audioPath, bool loop, const char *displayName, H
     float avgMaxMag = 1.0f;
 
     while (!WindowShouldClose() && (loop || IsMusicStreamPlaying(music))) {
+        if (IsKeyPressed(KEY_SPACE)) {
+            isPaused = !isPaused;
+            if (isPaused) PauseMusicStream(music);
+            else ResumeMusicStream(music);
+        }
+
         UpdateMusicStream(music);
         unsigned int sampleCursor = (unsigned int)(GetMusicTimePlayed(music) * wave.sampleRate);
 
