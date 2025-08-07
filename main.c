@@ -14,10 +14,73 @@ float lerp(float a, float b, float t) {
     return a + (b - a) * t;
 }
 
-Color GradientColor(float t) {
-    unsigned char r = (unsigned char)(255 * t);
-    unsigned char g = (unsigned char)(255 * (1.0f - t));
-    return (Color){r, g, 255, 180};
+typedef struct {
+    float h, s, v;
+} HSV;
+
+HSV RGBtoHSV(Color c) {
+    float r = c.r / 255.0f;
+    float g = c.g / 255.0f;
+    float b = c.b / 255.0f;
+
+    float max = fmaxf(fmaxf(r, g), b);
+    float min = fminf(fminf(r, g), b);
+    float delta = max - min;
+
+    HSV hsv;
+    hsv.v = max;
+
+    if (delta < 0.00001f) {
+        hsv.h = 0;
+        hsv.s = 0;
+        return hsv;
+    }
+
+    if (max > 0.0f)
+        hsv.s = delta / max;
+    else {
+        hsv.s = 0.0f;
+        hsv.h = NAN;
+        return hsv;
+    }
+
+    if (r >= max)
+        hsv.h = (g - b) / delta;
+    else if (g >= max)
+        hsv.h = 2.0f + (b - r) / delta;
+    else
+        hsv.h = 4.0f + (r - g) / delta;
+
+    hsv.h *= 60.0f;
+
+    if (hsv.h < 0.0f)
+        hsv.h += 360.0f;
+
+    return hsv;
+}
+
+Color HSVtoRGB(HSV hsv) {
+    float hh = hsv.h;
+    if (hh >= 360.0f) hh = 0.0f;
+    hh /= 60.0f;
+    int i = (int)hh;
+    float ff = hh - i;
+    float p = hsv.v * (1.0f - hsv.s);
+    float q = hsv.v * (1.0f - (hsv.s * ff));
+    float t = hsv.v * (1.0f - (hsv.s * (1.0f - ff)));
+
+    float r, g, b;
+    switch(i) {
+        case 0: r = hsv.v; g = t; b = p; break;
+        case 1: r = q; g = hsv.v; b = p; break;
+        case 2: r = p; g = hsv.v; b = t; break;
+        case 3: r = p; g = q; b = hsv.v; break;
+        case 4: r = t; g = p; b = hsv.v; break;
+        case 5:
+        default: r = hsv.v; g = p; b = q; break;
+    }
+
+    return (Color){(unsigned char)(r * 255), (unsigned char)(g * 255), (unsigned char)(b * 255), 180};
 }
 
 bool IsDirectory(const char *path) {
@@ -62,7 +125,7 @@ char **GetAudioFilesInDir(const char *dirPath, int *count) {
     return fileList;
 }
 
-void VisualizeAudio(const char *audioPath, bool loop, const char *displayName) {
+void VisualizeAudio(const char *audioPath, bool loop, const char *displayName, HSV baseHSV) {
     if (!FileExists(audioPath)) return;
 
     Music music = LoadMusicStream(audioPath);
@@ -156,15 +219,20 @@ void VisualizeAudio(const char *audioPath, bool loop, const char *displayName) {
         }
 
         BeginDrawing();
-        ClearBackground(Fade(BLACK, 0.85f));
+        ClearBackground(BLACK);
         BeginBlendMode(BLEND_ALPHA);
+
+        HSV hsvColor = baseHSV;
+        hsvColor.h += 10.0f * GetFrameTime();
+        if (hsvColor.h >= 360.0f) hsvColor.h -= 360.0f;
+
+        Color barColor = HSVtoRGB(hsvColor);
 
         for (int i = 0; i < barCount; i++) {
             float barHeight = smoothedInterp[i];
             float x = gapWidth + i * (fixedBarWidth + gapWidth);
             int y = screenH - barHeight;
-            Color c = GradientColor((float)i / barCount);
-            DrawRectangle((int)x, y, (int)fixedBarWidth, barHeight, c);
+            DrawRectangle((int)x, y, (int)fixedBarWidth, barHeight, barColor);
         }
 
         for (int i = 0; i < barCount; i++) {
@@ -176,6 +244,8 @@ void VisualizeAudio(const char *audioPath, bool loop, const char *displayName) {
         EndBlendMode();
         DrawText(displayName, 20, 20, 40, WHITE);
         EndDrawing();
+
+        baseHSV = hsvColor;
     }
 
     fftw_destroy_plan(plan);
@@ -208,6 +278,8 @@ int main(int argc, char *argv[]) {
     InitWindow(1024, 600, "Visualizer");
     InitAudioDevice();
 
+    HSV baseHSV = {210.0f, 0.7f, 0.8f}; // initial base color hue/saturation/value
+
     if (IsDirectory(path)) {
         int fileCount = 0;
         char **audioFiles = GetAudioFilesInDir(path, &fileCount);
@@ -227,7 +299,7 @@ int main(int argc, char *argv[]) {
             char audiostr[1024];
             snprintf(audiostr, sizeof(audiostr), "playing: %s", filename);
 
-            VisualizeAudio(audioFiles[currentFile], false, audiostr);
+            VisualizeAudio(audioFiles[currentFile], false, audiostr, baseHSV);
 
             currentFile++;
             if (currentFile >= fileCount) currentFile = 0;
@@ -246,9 +318,10 @@ int main(int argc, char *argv[]) {
         const char *filename = strrchr(path, '/');
         if (filename) filename++;
         else filename = path;
+
         char audiostr[1024];
         snprintf(audiostr, sizeof(audiostr), "playing: %s", filename);
-        VisualizeAudio(path, loop, audiostr);
+        VisualizeAudio(path, loop, audiostr, baseHSV);
     }
 
     CloseAudioDevice();
