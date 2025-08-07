@@ -1,6 +1,6 @@
 CC=gcc
 CFLAG=-Wall -Wextra -O2 -g
-LIB=-lm -lraylib -lfftw3
+LIB=-lm -lraylib -lfftw3 -lpulse
 SRC=main.c
 BIN=visualizer
 INSTALL_DIR=/usr/local/bin/
