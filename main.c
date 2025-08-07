@@ -86,7 +86,7 @@ void VisualizeAudio(const char *audioPath, bool loop, const char *displayName) {
 
     while (!WindowShouldClose() && (loop || IsMusicStreamPlaying(music))) {
         UpdateMusicStream(music);
-        unsigned int sampleCursor = GetMusicTimePlayed(music) * wave.sampleRate;
+        unsigned int sampleCursor = (unsigned int)(GetMusicTimePlayed(music) * wave.sampleRate);
 
         for (int i = 0; i < FFT_SIZE; i++) {
             if ((int)(sampleCursor + i) < totalSamples) {
@@ -104,12 +104,13 @@ void VisualizeAudio(const char *audioPath, bool loop, const char *displayName) {
         int screenH = GetScreenHeight();
         int barCount = MAX_BARS;
 
-        float totalSpacing = (barCount - 1) * 2.0f;
-        float barWidth = (screenW - totalSpacing) / (float)barCount;
-        float spacing = 2.0f;
+        const float fixedBarWidth = 3.0f;
+        float totalBarWidth = barCount * fixedBarWidth;
+        float totalGapWidth = screenW - totalBarWidth;
+        float gapWidth = totalGapWidth / (barCount + 1);
 
-        float maxMag = 1.0f;
         float mags[MAX_BARS] = {0};
+        float maxMag = 1.0f;
 
         for (int i = 0; i < barCount; i++) {
             float logMin = log10f(2.0f);
@@ -160,16 +161,16 @@ void VisualizeAudio(const char *audioPath, bool loop, const char *displayName) {
 
         for (int i = 0; i < barCount; i++) {
             float barHeight = smoothedInterp[i];
-            float x = i * (barWidth + spacing);
+            float x = gapWidth + i * (fixedBarWidth + gapWidth);
             int y = screenH - barHeight;
             Color c = GradientColor((float)i / barCount);
-            DrawRectangle((int)x, y, (int)barWidth, barHeight, c);
+            DrawRectangle((int)x, y, (int)fixedBarWidth, barHeight, c);
         }
 
         for (int i = 0; i < barCount; i++) {
-            float x = i * (barWidth + spacing);
+            float x = gapWidth + i * (fixedBarWidth + gapWidth);
             int y = screenH - peaks[i];
-            DrawRectangle((int)x, y, (int)barWidth, 4, WHITE);
+            DrawRectangle((int)x, y, (int)fixedBarWidth, 4, WHITE);
         }
 
         EndBlendMode();
@@ -218,7 +219,7 @@ int main(int argc, char *argv[]) {
         }
 
         int currentFile = 0;
-        while (!WindowShouldClose()) {
+        do {
             const char *filename = strrchr(audioFiles[currentFile], '/');
             if (filename) filename++;
             else filename = audioFiles[currentFile];
@@ -229,11 +230,9 @@ int main(int argc, char *argv[]) {
             VisualizeAudio(audioFiles[currentFile], false, audiostr);
 
             currentFile++;
-            if (currentFile >= fileCount) {
-                if (loop) currentFile = 0;
-                else break;
-            }
-        }
+            if (currentFile >= fileCount) currentFile = 0;
+
+        } while (loop && !WindowShouldClose());
 
         for (int i = 0; i < fileCount; i++) free(audioFiles[i]);
         free(audioFiles);
