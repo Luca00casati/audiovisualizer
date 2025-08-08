@@ -6,53 +6,9 @@
 #include <string.h>
 #include <dirent.h>
 #include <sys/stat.h>
+#include "common.h"
 
-#define FFT_SIZE 2048
-#define MAX_BARS 256
-
-bool IsDirectory(const char *path) {
-    struct stat statbuf;
-    if (stat(path, &statbuf) != 0) return false;
-    return S_ISDIR(statbuf.st_mode);
-}
-
-bool IsAudioFile(const char *filename) {
-    const char *ext = strrchr(filename, '.');
-    if (!ext) return false;
-    if (strcasecmp(ext, ".wav") == 0 ||
-        strcasecmp(ext, ".mp3") == 0 ||
-        strcasecmp(ext, ".ogg") == 0) return true;
-    return false;
-}
-
-char **GetAudioFilesInDir(const char *dirPath, int *count) {
-    DIR *dir = opendir(dirPath);
-    if (!dir) return NULL;
-
-    char **fileList = NULL;
-    int capacity = 10;
-    int size = 0;
-    fileList = malloc(capacity * sizeof(char*));
-
-    struct dirent *entry;
-    while ((entry = readdir(dir)) != NULL) {
-        if (entry->d_type == DT_REG && IsAudioFile(entry->d_name)) {
-            if (size == capacity) {
-                capacity *= 2;
-                fileList = realloc(fileList, capacity * sizeof(char*));
-            }
-            int len = strlen(dirPath) + strlen(entry->d_name) + 2;
-            char *fullpath = malloc(len);
-            snprintf(fullpath, len, "%s/%s", dirPath, entry->d_name);
-            fileList[size++] = fullpath;
-        }
-    }
-    closedir(dir);
-    *count = size;
-    return fileList;
-}
-
-void VisualizeAudio(const char *audioPath, bool loop, const char *displayName, HSV baseHSV) {
+void VisualizeAudioFiles(const char *audioPath, bool loop, const char *displayName, HSV baseHSV) {
     if (!FileExists(audioPath)) return;
     bool isPaused = false;
 
@@ -96,7 +52,7 @@ void VisualizeAudio(const char *audioPath, bool loop, const char *displayName, H
         }
 
         fftw_execute(plan);
-        draw_visualizer();
+        draw_visualizer(out, smoothed,  smoothedInterp,  peaks, &avgMaxMag, displayName, &baseHSV);
     }
 
     fftw_destroy_plan(plan);

@@ -9,18 +9,27 @@
 
 int main(int argc, char *argv[]) {
     bool loop = false;
+    bool usefiles = false;
+    bool usepulse = false;
     const char *path = NULL;
 
     if (argc < 2) {
-        printf("Usage: %s [-l]<file_or_dir>\n", argv[0]);
+        printf("Usage: %s [-loop] <file_or_dir>\n", argv[0]);
+        printf("Usage: %s -pulse <source>\n", argv[0]);
         return 1;
     }
 
-    if (argc >= 3 && strcmp(argv[1], "-l") == 0) {
+    if (argc == 3 && strcmp(argv[1], "-loop") == 0) {
         loop = true;
         path = argv[2];
+        usefiles = true;
+    }
+     else if(argc == 3 && strcmp(argv[1], "-pulse") == 0) {
+        path = argv[2];
+        usepulse = true;
     } else {
         path = argv[1];
+        usefiles = true;
     }
 
     InitWindow(1024, 600, "Visualizer");
@@ -28,6 +37,7 @@ int main(int argc, char *argv[]) {
 
     HSV baseHSV = {210.0f, 0.7f, 0.8f}; // initial base color hue/saturation/value
 
+    if (usefiles) {
     if (IsDirectory(path)) {
         int fileCount = 0;
         char **audioFiles = GetAudioFilesInDir(path, &fileCount);
@@ -47,7 +57,7 @@ int main(int argc, char *argv[]) {
             char audiostr[1024];
             snprintf(audiostr, sizeof(audiostr), "playing: %s", filename);
 
-            VisualizeAudio(audioFiles[currentFile], false, audiostr, baseHSV);
+            VisualizeAudioFiles(audioFiles[currentFile], false, audiostr, baseHSV);
 
             currentFile++;
             if (currentFile >= fileCount) currentFile = 0;
@@ -69,7 +79,11 @@ int main(int argc, char *argv[]) {
 
         char audiostr[1024];
         snprintf(audiostr, sizeof(audiostr), "playing: %s", filename);
-        VisualizeAudio(path, loop, audiostr, baseHSV);
+        VisualizeAudioFiles(path, loop, audiostr, baseHSV);
+        }
+    }
+    if (usepulse){
+        VisualizePulseAudio(path, baseHSV);
     }
 
     CloseAudioDevice();

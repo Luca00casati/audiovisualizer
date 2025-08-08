@@ -4,15 +4,14 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <dirent.h>
+#include <sys/stat.h>
 #include "common.h"
 
 float lerp(float a, float b, float t) {
     return a + (b - a) * t;
 }
 
-typedef struct {
-    float h, s, v;
-} HSV;
 
 HSV RGBtoHSV(Color c) {
     float r = c.r / 255.0f;
@@ -79,8 +78,49 @@ Color HSVtoRGB(HSV hsv) {
     return (Color){(unsigned char)(r * 255), (unsigned char)(g * 255), (unsigned char)(b * 255), 180};
 }
 
+bool IsDirectory(const char *path) {
+    struct stat statbuf;
+    if (stat(path, &statbuf) != 0) return false;
+    return S_ISDIR(statbuf.st_mode);
+}
 
-void draw_visualizer(HSV baseHSV, fftw_complex *out, float *smoothed,  float *smoothedInterp,  float *peaks, float avgMaxMag, const char *displayName){
+bool IsAudioFile(const char *filename) {
+    const char *ext = strrchr(filename, '.');
+    if (!ext) return false;
+    if (strcasecmp(ext, ".wav") == 0 ||
+        strcasecmp(ext, ".mp3") == 0 ||
+        strcasecmp(ext, ".ogg") == 0) return true;
+    return false;
+}
+
+char **GetAudioFilesInDir(const char *dirPath, int *count) {
+    DIR *dir = opendir(dirPath);
+    if (!dir) return NULL;
+
+    char **fileList = NULL;
+    int capacity = 10;
+    int size = 0;
+    fileList = malloc(capacity * sizeof(char*));
+
+    struct dirent *entry;
+    while ((entry = readdir(dir)) != NULL) {
+        if (entry->d_type == DT_REG && IsAudioFile(entry->d_name)) {
+            if (size == capacity) {
+                capacity *= 2;
+                fileList = realloc(fileList, capacity * sizeof(char*));
+            }
+            int len = strlen(dirPath) + strlen(entry->d_name) + 2;
+            char *fullpath = malloc(len);
+            snprintf(fullpath, len, "%s/%s", dirPath, entry->d_name);
+            fileList[size++] = fullpath;
+        }
+    }
+    closedir(dir);
+    *count = size;
+    return fileList;
+}
+
+void draw_visualizer(fftw_complex *out, float *smoothed,  float *smoothedInterp,  float *peaks, float* avgMaxMag, const char *displayName, HSV* baseHSV){
         int screenW = GetScreenWidth();
         int screenH = GetScreenHeight();
         int barCount = MAX_BARS;
@@ -116,10 +156,10 @@ void draw_visualizer(HSV baseHSV, fftw_complex *out, float *smoothed,  float *sm
             if (mag > maxMag) maxMag = mag;
         }
 
-        avgMaxMag = lerp(avgMaxMag, maxMag, 0.1f);
+        *avgMaxMag = lerp(*avgMaxMag, maxMag, 0.1f);
 
         for (int i = 0; i < barCount; i++) {
-            float scaled = mags[i] / avgMaxMag * screenH;
+            float scaled = mags[i] / *avgMaxMag * screenH;
             smoothed[i] = lerp(smoothed[i], scaled, 0.2f);
         }
 
@@ -140,7 +180,7 @@ void draw_visualizer(HSV baseHSV, fftw_complex *out, float *smoothed,  float *sm
         ClearBackground(BLACK);
         BeginBlendMode(BLEND_ALPHA);
 
-        HSV hsvColor = baseHSV;
+        HSV hsvColor = *baseHSV;
         hsvColor.h += 10.0f * GetFrameTime();
         if (hsvColor.h >= 360.0f) hsvColor.h -= 360.0f;
 
@@ -163,7 +203,7 @@ void draw_visualizer(HSV baseHSV, fftw_complex *out, float *smoothed,  float *sm
         DrawText(displayName, 20, 20, 40, WHITE);
         EndDrawing();
 
-        baseHSV = hsvColor;
+        *baseHSV = hsvColor;
     }
 
 

@@ -22,10 +22,6 @@ static float peaks[MAX_BARS];
 static bool ready = false;
 static bool quit = false;
 
-static float lerp(float a, float b, float t) {
-    return a + t * (b - a);
-}
-
 void cleanup_pulse() {
     if (pa_stream_ptr) {
         pa_stream_disconnect(pa_stream_ptr);
@@ -88,10 +84,8 @@ void context_state_cb(pa_context *c, void *userdata) {
     }
 }
 
-void VisualizePulseAudio() {
-    InitWindow(1024, 600, "PulseAudio Visualizer");
-    InitAudioDevice();
-
+// for get sources: pactl list sources short
+void VisualizePulseAudio(const char * src, HSV baseHSV) {
     for (int i = 0; i < MAX_BARS; i++) smoothed[i] = 0;
     for (int i = 0; i < MAX_BARS; i++) smoothedInterp[i] = 0;
     for (int i = 0; i < MAX_BARS; i++) peaks[i] = 0;
@@ -110,8 +104,6 @@ void VisualizePulseAudio() {
     }
     if (quit) {
         cleanup_pulse();
-        CloseAudioDevice();
-        CloseWindow();
         return;
     }
 
@@ -124,39 +116,24 @@ void VisualizePulseAudio() {
     pa_stream_ptr = pa_stream_new(pa_ctx, "Record Stream", &sample_spec, NULL);
     pa_stream_set_read_callback(pa_stream_ptr, stream_read_cb, NULL);
 
-    int ret = pa_stream_connect_record(pa_stream_ptr, "alsa_output.pci-0000_00_1b.0.analog-stereo.monitor", NULL, PA_STREAM_ADJUST_LATENCY);
+    int ret = pa_stream_connect_record(pa_stream_ptr, src, NULL, PA_STREAM_ADJUST_LATENCY);
     if (ret < 0) {
         printf("Failed to connect record stream\n");
         cleanup_pulse();
-        CloseAudioDevice();
-        CloseWindow();
         return;
     }
 
     float avgMaxMag = 1.0f;
+    const char* displayName = NULL;
 
     SetTargetFPS(60);
     while (!WindowShouldClose() && !quit) {
         pa_mainloop_iterate(pa_ml, 0, NULL);
 
-    draw_visualizer(&baseHSV, &out, &smoothed,  &smoothedInterp,  &peaks, float avgMaxMag, &displayName);
+    draw_visualizer(out, smoothed,  smoothedInterp,  peaks, &avgMaxMag, displayName, &baseHSV);
     }
 
     fftw_destroy_plan(plan);
     fftw_free(out);
     cleanup_pulse();
-
-    CloseAudioDevice();
-    CloseWindow();
 }
-
-// int main(int argc, char **argv) {
-//     if (argc == 2 && strcmp(argv[1], "-p") == 0) {
-//         VisualizePulseAudio();
-//     } else {
-//         printf("Usage: %s -p\n", argv[0]);
-//         return 1;
-//     }
-//     return 0;
-// }
-
